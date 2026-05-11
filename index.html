@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TeleMusic - My Player</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0e1a;
+    font-family: -apple-system, 'SF Pro Display', BlinkMacSystemFont, sans-serif;
+    color: #e8eaf6;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  :root {
+    --tg-blue: #2AABEE;
+    --tg-dark: #0a0e1a;
+    --tg-surface: #12172b;
+    --tg-card: #1a2035;
+    --tg-border: rgba(42,171,238,0.15);
+    --tg-text: #e8eaf6;
+    --tg-muted: #7986a3;
+  }
+  @keyframes slideUp { from{transform:translateY(20px);opacity:0} to{transform:translateY(0);opacity:1} }
+  @keyframes barAnim { 0%,100%{height:4px} 50%{height:100%} }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .playing-bar { display:flex;align-items:flex-end;gap:2px;height:16px; }
+  .playing-bar span { display:inline-block;width:3px;border-radius:2px;background:var(--tg-blue);animation:barAnim 0.8s ease-in-out infinite; }
+  .playing-bar span:nth-child(2){animation-delay:0.15s}
+  .playing-bar span:nth-child(3){animation-delay:0.3s}
+
+  .nav-bar {
+    position:fixed;bottom:0;left:0;right:0;
+    background:rgba(10,14,26,0.97);
+    backdrop-filter:blur(20px);
+    border-top:0.5px solid var(--tg-border);
+    display:flex;justify-content:space-around;
+    padding:8px 0 20px;z-index:100;
+  }
+  .nav-item {
+    display:flex;flex-direction:column;align-items:center;gap:4px;
+    cursor:pointer;padding:4px 20px;border-radius:12px;transition:all 0.2s;
+    background:none;border:none;color:var(--tg-muted);
+  }
+  .nav-item.active { color:var(--tg-blue); }
+  .nav-icon { font-size:22px; }
+  .nav-label { font-size:10px;font-weight:500; }
+
+  .track-card {
+    display:flex;align-items:center;gap:12px;
+    padding:10px 16px;cursor:pointer;
+    transition:background 0.2s;border-radius:12px;
+  }
+  .track-card:hover { background:rgba(42,171,238,0.07); }
+  .track-art {
+    width:48px;height:48px;border-radius:10px;
+    background:#1a2035;border:1px solid var(--tg-border);
+    display:flex;align-items:center;justify-content:center;
+    font-size:20px;flex-shrink:0;position:relative;overflow:hidden;
+  }
+  .track-art-overlay {
+    position:absolute;inset:0;border-radius:10px;
+    background:rgba(0,0,0,0.5);
+    display:flex;align-items:center;justify-content:center;
+  }
+
+  .progress-bar {
+    width:100%;height:4px;background:rgba(255,255,255,0.1);
+    border-radius:2px;cursor:pointer;position:relative;
+  }
+  .progress-fill {
+    height:100%;
+    background:linear-gradient(90deg,var(--tg-blue),#7b2ff7);
+    border-radius:2px;transition:width 0.5s linear;
+  }
+  .progress-thumb {
+    width:14px;height:14px;background:#fff;border-radius:50%;
+    position:absolute;top:50%;transform:translate(-50%,-50%);
+    box-shadow:0 0 8px rgba(42,171,238,0.6);
+  }
+
+  .btn {
+    border:none;cursor:pointer;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    transition:all 0.2s;background:rgba(255,255,255,0.06);
+  }
+  .btn:active { transform:scale(0.93); }
+  .btn-play {
+    width:64px;height:64px;font-size:22px;
+    background:linear-gradient(135deg,var(--tg-blue),#7b2ff7);
+    box-shadow:0 8px 30px rgba(42,171,238,0.4);
+  }
+  .btn-sm { width:44px;height:44px;font-size:18px;color:var(--tg-muted); }
+  .btn-like { width:36px;height:36px;font-size:18px;background:transparent;color:var(--tg-muted); }
+  .btn-like.liked { color:#ff5c8a; }
+
+  input[type=range] {
+    -webkit-appearance:none;width:100%;height:3px;
+    border-radius:2px;background:rgba(255,255,255,0.15);outline:none;cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance:none;width:14px;height:14px;
+    border-radius:50%;background:var(--tg-blue);
+  }
+
+  .tag-pill {
+    display:inline-block;padding:3px 10px;border-radius:20px;
+    font-size:11px;font-weight:600;
+  }
+
+  .playlist-card {
+    background:var(--tg-card);border-radius:16px;overflow:hidden;
+    border:0.5px solid var(--tg-border);margin-bottom:14px;
+  }
+
+  .gradient-text {
+    background:linear-gradient(90deg,var(--tg-blue),#a78bfa);
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+    background-clip:text;
+  }
+
+  .empty-state {
+    display:flex;flex-direction:column;align-items:center;
+    justify-content:center;padding:60px 20px;color:var(--tg-muted);text-align:center;
+  }
+
+  .header {
+    position:sticky;top:0;
+    background:rgba(10,14,26,0.95);
+    backdrop-filter:blur(20px);
+    padding:14px 16px 10px;
+    z-index:50;border-bottom:0.5px solid var(--tg-border);
+  }
+
+  .mini-player {
+    display:flex;align-items:center;gap:8px;
+    background:var(--tg-card);border-radius:20px;
+    padding:5px 12px;border:0.5px solid var(--tg-border);
+    cursor:pointer;max-width:200px;
+  }
+
+  .loader {
+    width:20px;height:20px;border:2px solid rgba(42,171,238,0.3);
+    border-top-color:var(--tg-blue);border-radius:50%;
+    animation:spin 0.8s linear infinite;display:inline-block;
+  }
+
+  .generate-btn {
+    width:100%;padding:14px;border-radius:14px;
+    background:linear-gradient(135deg,var(--tg-blue),#7b2ff7);
+    border:none;color:#fff;font-size:15px;font-weight:600;
+    cursor:pointer;transition:all 0.3s;
+    box-shadow:0 8px 30px rgba(42,171,238,0.3);
+  }
+  .generate-btn:disabled {
+    background:rgba(42,171,238,0.2);box-shadow:none;cursor:not-allowed;
+  }
+
+  .filter-pill {
+    flex-shrink:0;padding:6px 14px;border-radius:20px;
+    border:1px solid var(--tg-border);
+    background:transparent;color:var(--tg-muted);
+    cursor:pointer;font-size:13px;font-weight:500;
+    transition:all 0.2s;white-space:nowrap;
+  }
+  .filter-pill.active {
+    border-color:var(--tg-blue);
+    background:rgba(42,171,238,0.15);
+    color:var(--tg-blue);
+  }
+
+  .page { display:none; padding-bottom:90px; animation:slideUp 0.3s ease; }
+  .page.active { display:block; }
+
+  .error-box {
+    background:rgba(231,76,60,0.1);
+    border:1px solid rgba(231,76,60,0.3);
+    border-radius:12px;padding:12px 14px;
+    color:#e74c3c;font-size:14px;margin-bottom:16px;
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div style="display:flex;align-items:center;gap:10px;">
+    <div style="width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--tg-blue),#7b2ff7);display:flex;align-items:center;justify-content:center;font-size:16px;">🎵</div>
+    <div>
+      <p style="font-weight:700;font-size:16px;line-height:1;">TeleMusic</p>
+      <p style="font-size:11px;color:var(--tg-muted);" id="song-count">Loading...</p>
+    </div>
+    <div id="mini-player" class="mini-player" style="margin-left:auto;display:none;" onclick="showPage('player')">
+      <span id="mini-emoji">🎵</span>
+      <span id="mini-title" style="font-size:12px;font-weight:500;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+      <button class="btn" style="width:24px;height:24px;background:transparent;font-size:14px;color:var(--tg-blue);" id="mini-toggle" onclick="event.stopPropagation();togglePlay()">▶️</button>
+    </div>
+  </div>
+</div>
+
+<!-- LIBRARY PAGE -->
+<div id="page-library" class="page active">
+  <div style="overflow-x:auto;padding:12px 16px;display:flex;gap:8px;scrollbar-width:none;" id="filter-bar"></div>
+  <div id="track-list" style="padding:0 0 8px;"></div>
+</div>
+
+<!-- PLAYER PAGE -->
+<div id="page-player" class="page">
+  <div style="padding:24px 20px;" id="player-content">
+    <div class="empty-state">
+      <div style="font-size:64px;margin-bottom:16px;">🎵</div>
+      <p style="font-size:16px;font-weight:500;">No track selected</p>
+      <p style="font-size:13px;margin-top:6px;">Pick a song from the Library</p>
+    </div>
+  </div>
+</div>
+
+<!-- FOR YOU PAGE -->
+<div id="page-foryou" class="page">
+  <div style="padding:16px;">
+    <div style="text-align:center;margin-bottom:24px;">
+      <div style="font-size:40px;margin-bottom:8px;">✨</div>
+      <p class="gradient-text" style="font-size:20px;font-weight:700;">AI Playlist Generator</p>
+      <p style="color:var(--tg-muted);font-size:13px;margin-top:4px;line-height:1.5;">Claude analyzes your listening history<br>and creates personalized playlists</p>
+    </div>
+
+    <div id="history-box" style="display:none;background:var(--tg-card);border-radius:14px;padding:12px 14px;margin-bottom:20px;border:0.5px solid var(--tg-border);">
+      <p style="font-size:12px;color:var(--tg-muted);margin-bottom:8px;">Recently played</p>
+      <div id="history-tags" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+    </div>
+
+    <button class="generate-btn" id="generate-btn" onclick="generatePlaylists()">🎲 Generate My Playlists</button>
+
+    <div id="ai-error" style="display:none;margin-top:16px;" class="error-box"></div>
+    <div id="playlists-container" style="margin-top:20px;"></div>
+  </div>
+</div>
+
+<!-- NAV BAR -->
+<nav class="nav-bar">
+  <button class="nav-item active" id="nav-library" onclick="showPage('library')">
+    <span class="nav-icon">📚</span>
+    <span class="nav-label">Library</span>
+  </button>
+  <button class="nav-item" id="nav-player" onclick="showPage('player')">
+    <span class="nav-icon">🎵</span>
+    <span class="nav-label">Playing</span>
+    <div id="now-dot" style="display:none;position:absolute;top:4px;right:10px;width:6px;height:6px;border-radius:3px;background:var(--tg-blue);"></div>
+  </button>
+  <button class="nav-item" id="nav-foryou" onclick="showPage('foryou')">
+    <span class="nav-icon">✨</span>
+    <span class="nav-label">For You</span>
+  </button>
+</nav>
+
+<script>
+// ============================================================
+// CONFIG — change this after you deploy your backend
+// ============================================================
+const BACKEND = 'http://localhost:3000';
+
+// ============================================================
+// STATE
+// ============================================================
+let allTracks = [];
+let currentTrack = null;
+let isPlaying = false;
+let progress = 0;
+let volume = 80;
+let liked = JSON.parse(localStorage.getItem('liked') || '[]');
+let history = JSON.parse(localStorage.getItem('history') || '[]');
+let currentFilter = 'All';
+let progressTimer = null;
+const audio = new Audio();
+audio.volume = volume / 100;
+
+const EMOJIS = ['🎵','🎶','🎸','🎹','🎺','🎻','🥁','🎷'];
+const COLORS = ['#1a1a3e','#0d2137','#1e1a0e','#1a0d2e','#0d1a10','#1a0d1a','#0a1220','#1a2035'];
+const ACCENTS = ['#9b59b6','#2AABEE','#f39c12','#e74c3c','#2ecc71','#e91e8c','#00bcd4','#673ab7'];
+
+function trackEmoji(t, i) {
+  return EMOJIS[i % EMOJIS.length];
+}
+function trackColor(t, i) {
+  return COLORS[i % COLORS.length];
+}
+function trackAccent(t, i) {
+  return ACCENTS[i % ACCENTS.length];
+}
+function formatTime(s) {
+  s = Math.floor(s || 0);
+  return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+
+// ============================================================
+// LOAD SONGS FROM BACKEND
+// ============================================================
+async function loadSongs() {
+  try {
+    const res = await fetch(`${BACKEND}/songs`);
+    const data = await res.json();
+    allTracks = data.map((t, i) => ({
+      ...t,
+      emoji: trackEmoji(t, i),
+      color: trackColor(t, i),
+      accent: trackAccent(t, i),
+      src: `${BACKEND}/play/${t.file_id}`
+    }));
+
+    document.getElementById('song-count').textContent =
+      allTracks.length === 0 ? 'No songs yet — forward audio to your bot!'
+      : `${allTracks.length} song${allTracks.length !== 1 ? 's' : ''} in your library`;
+
+    renderFilters();
+    renderLibrary();
+  } catch(e) {
+    document.getElementById('song-count').textContent = 'Could not connect to server';
+    document.getElementById('track-list').innerHTML = `
+      <div class="empty-state">
+        <div style="font-size:48px;margin-bottom:12px;">⚠️</div>
+        <p style="font-size:15px;font-weight:500;">Server not reachable</p>
+        <p style="font-size:13px;margin-top:6px;">Make sure node server.js is running</p>
+      </div>`;
+  }
+}
+
+// ============================================================
+// RENDER FILTERS
+// ============================================================
+function renderFilters() {
+  const bar = document.getElementById('filter-bar');
+  const filters = ['All', 'Recently Added', 'Liked'];
+  bar.innerHTML = filters.map(f => `
+    <button class="filter-pill ${currentFilter===f?'active':''}" onclick="setFilter('${f}')">${f}</button>
+  `).join('');
+}
+
+function setFilter(f) {
+  currentFilter = f;
+  renderFilters();
+  renderLibrary();
+}
+
+// ============================================================
+// RENDER LIBRARY
+// ============================================================
+function renderLibrary() {
+  let tracks = [...allTracks];
+  if (currentFilter === 'Liked') tracks = tracks.filter(t => liked.includes(t.id));
+  if (currentFilter === 'Recently Added') tracks = tracks.slice().reverse();
+
+  const container = document.getElementById('track-list');
+
+  if (tracks.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div style="font-size:48px;margin-bottom:12px;">🎵</div>
+        <p style="font-size:15px;font-weight:500;">${currentFilter === 'Liked' ? 'No liked songs yet' : 'No songs in your library'}</p>
+        <p style="font-size:13px;margin-top:6px;">${currentFilter === 'Liked' ? 'Tap ❤️ on any song' : 'Forward audio files to your Telegram bot'}</p>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = tracks.map(t => `
+    <div class="track-card" onclick="playTrack(${t.id})" id="track-${t.id}">
+      <div class="track-art" style="background:${t.color};border-color:${t.accent}40;">
+        <span style="font-size:22px;">${t.emoji}</span>
+        ${currentTrack && currentTrack.id === t.id ? `
+          <div class="track-art-overlay">
+            <div class="playing-bar">
+              ${isPlaying ? '<span></span><span></span><span></span>' : '<span style="height:4px;animation:none;"></span>'}
+            </div>
+          </div>` : ''}
+      </div>
+      <div style="flex:1;min-width:0;">
+        <p style="font-weight:600;font-size:14px;color:${currentTrack && currentTrack.id === t.id ? 'var(--tg-blue)' : 'var(--tg-text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.title}</p>
+        <p style="font-size:12px;color:var(--tg-muted);margin-top:2px;">${t.artist} · ${formatTime(t.duration)}</p>
+      </div>
+      <button class="btn btn-like ${liked.includes(t.id)?'liked':''}" onclick="event.stopPropagation();toggleLike(${t.id})">
+        ${liked.includes(t.id) ? '❤️' : '🤍'}
+      </button>
+    </div>
+  `).join('');
+}
+
+// ============================================================
+// PLAY A TRACK
+// ============================================================
+function playTrack(id) {
+  const track = allTracks.find(t => t.id === id);
+  if (!track) return;
+
+  currentTrack = track;
+  isPlaying = true;
+  progress = 0;
+
+  audio.src = track.src;
+  audio.volume = volume / 100;
+  audio.play().catch(e => console.log('Playback error:', e));
+
+  // Save to history
+  history = [track, ...history.filter(t => t.id !== track.id)].slice(0, 30);
+  localStorage.setItem('history', JSON.stringify(history));
+
+  updateMiniPlayer();
+  renderPlayer();
+  renderLibrary();
+  updateHistoryBox();
+  showPage('player');
+}
+
+function togglePlay() {
+  if (!currentTrack) return;
+  if (isPlaying) {
+    audio.pause();
+    isPlaying = false;
+  } else {
+    audio.play();
+    isPlaying = true;
+  }
+  updateMiniPlayer();
+  renderPlayer();
+  renderLibrary();
+}
+
+function nextTrack() {
+  if (!currentTrack) return;
+  const idx = allTracks.findIndex(t => t.id === currentTrack.id);
+  playTrack(allTracks[(idx + 1) % allTracks.length].id);
+}
+
+function prevTrack() {
+  if (!currentTrack) return;
+  const idx = allTracks.findIndex(t => t.id === currentTrack.id);
+  playTrack(allTracks[(idx - 1 + allTracks.length) % allTracks.length].id);
+}
+
+// Audio events
+audio.addEventListener('timeupdate', () => {
+  if (audio.duration) {
+    progress = (audio.currentTime / audio.duration) * 100;
+    const fill = document.getElementById('progress-fill');
+    const thumb = document.getElementById('progress-thumb');
+    const cur = document.getElementById('current-time');
+    if (fill) fill.style.width = progress + '%';
+    if (thumb) thumb.style.left = progress + '%';
+    if (cur) cur.textContent = formatTime(audio.currentTime);
+  }
+});
+
+audio.addEventListener('ended', () => {
+  nextTrack();
+});
+
+audio.addEventListener('play', () => { isPlaying = true; updateMiniPlayer(); });
+audio.addEventListener('pause', () => { isPlaying = false; updateMiniPlayer(); });
+
+// ============================================================
+// RENDER PLAYER PAGE
+// ============================================================
+function renderPlayer() {
+  const container = document.getElementById('player-content');
+  if (!currentTrack) return;
+  const t = currentTrack;
+  container.innerHTML = `
+    <div style="animation:slideUp 0.3s ease;">
+      <div style="width:100%;max-width:280px;margin:0 auto 28px;aspect-ratio:1;border-radius:24px;background:${t.color};display:flex;align-items:center;justify-content:center;font-size:90px;box-shadow:0 30px 80px ${t.accent}50;border:1px solid ${t.accent}30;">
+        ${t.emoji}
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+        <div style="flex:1;min-width:0;margin-right:12px;">
+          <p style="font-size:22px;font-weight:700;letter-spacing:-0.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.title}</p>
+          <p style="color:var(--tg-muted);font-size:15px;margin-top:3px;">${t.artist}</p>
+        </div>
+        <button class="btn btn-like ${liked.includes(t.id)?'liked':''}" style="width:44px;height:44px;font-size:22px;" onclick="toggleLike(${t.id});renderPlayer();">
+          ${liked.includes(t.id) ? '❤️' : '🤍'}
+        </button>
+      </div>
+
+      <div style="margin-bottom:12px;">
+        <div class="progress-bar" onclick="seekTo(event)">
+          <div class="progress-fill" id="progress-fill" style="width:${progress}%;"></div>
+          <div class="progress-thumb" id="progress-thumb" style="left:${progress}%;"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:var(--tg-muted);">
+          <span id="current-time">${formatTime(audio.currentTime)}</span>
+          <span>${formatTime(t.duration)}</span>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0 8px;margin-bottom:24px;">
+        <button class="btn btn-sm" onclick="prevTrack()">⏮</button>
+        <button class="btn btn-play" onclick="togglePlay()">
+          ${isPlaying ? '⏸' : '▶️'}
+        </button>
+        <button class="btn btn-sm" onclick="nextTrack()">⏭</button>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:16px;">🔈</span>
+        <input type="range" min="0" max="100" value="${volume}" oninput="setVolume(this.value)" style="flex:1;">
+        <span style="font-size:16px;">🔊</span>
+      </div>
+    </div>
+  `;
+}
+
+function seekTo(e) {
+  const bar = e.currentTarget;
+  const rect = bar.getBoundingClientRect();
+  const pct = (e.clientX - rect.left) / rect.width;
+  if (audio.duration) {
+    audio.currentTime = pct * audio.duration;
+  }
+}
+
+function setVolume(v) {
+  volume = parseInt(v);
+  audio.volume = volume / 100;
+}
+
+// ============================================================
+// MINI PLAYER
+// ============================================================
+function updateMiniPlayer() {
+  const mini = document.getElementById('mini-player');
+  const dot = document.getElementById('now-dot');
+  if (!currentTrack) { mini.style.display = 'none'; return; }
+  mini.style.display = 'flex';
+  document.getElementById('mini-emoji').textContent = currentTrack.emoji;
+  document.getElementById('mini-title').textContent = currentTrack.title;
+  document.getElementById('mini-toggle').textContent = isPlaying ? '⏸' : '▶️';
+  if (dot) dot.style.display = isPlaying ? 'block' : 'none';
+}
+
+// ============================================================
+// LIKE
+// ============================================================
+function toggleLike(id) {
+  if (liked.includes(id)) liked = liked.filter(x => x !== id);
+  else liked.push(id);
+  localStorage.setItem('liked', JSON.stringify(liked));
+  renderLibrary();
+}
+
+// ============================================================
+// HISTORY BOX (For You page)
+// ============================================================
+function updateHistoryBox() {
+  const box = document.getElementById('history-box');
+  const tags = document.getElementById('history-tags');
+  if (history.length === 0) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  const unique = [...new Map(history.map(t => [t.id, t])).values()].slice(0, 6);
+  tags.innerHTML = unique.map(t => `
+    <span style="background:rgba(42,171,238,0.1);color:var(--tg-blue);padding:3px 10px;border-radius:20px;font-size:12px;">
+      ${t.emoji} ${t.title}
+    </span>
+  `).join('');
+}
+
+// ============================================================
+// AI PLAYLIST GENERATION
+// ============================================================
+async function generatePlaylists() {
+  const btn = document.getElementById('generate-btn');
+  const errorBox = document.getElementById('ai-error');
+  const container = document.getElementById('playlists-container');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Generating playlists...';
+  errorBox.style.display = 'none';
+  container.innerHTML = '';
+
+  try {
+    const likedTracks = allTracks.filter(t => liked.includes(t.id))
+      .map(t => `${t.title} by ${t.artist}`);
+    const recentTracks = [...new Map(history.map(t => [t.id, t])).values()]
+      .slice(0, 10).map(t => `${t.title} by ${t.artist}`);
+
+    const prompt = `You are a music recommendation AI.
+
+User's recently played: ${recentTracks.length ? recentTracks.join(', ') : 'No history yet'}
+User's liked songs: ${likedTracks.length ? likedTracks.join(', ') : 'None yet'}
+Available tracks (use ONLY these IDs):
+${allTracks.map(t => `[id:${t.id}] "${t.title}" by ${t.artist}`).join('\n')}
+
+Create 3 smart playlists using ONLY the track IDs above. Make them distinct moods/themes.
+Respond ONLY with valid JSON, no markdown:
+{"playlists":[{"name":"...","description":"...","emoji":"...","trackIds":[1,2,3],"mood":"..."}]}`;
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    const data = await res.json();
+    const text = data.content.map(b => b.text || '').join('').replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(text);
+    renderPlaylists(parsed.playlists);
+
+  } catch(e) {
+    errorBox.style.display = 'block';
+    errorBox.textContent = '⚠️ Could not generate playlists. Make sure you have songs in your library.';
+  }
+
+  btn.disabled = false;
+  btn.textContent = '🎲 Generate My Playlists';
+}
+
+function renderPlaylists(playlists) {
+  const container = document.getElementById('playlists-container');
+  container.innerHTML = playlists.map(pl => {
+    const tracks = (pl.trackIds || []).map(id => allTracks.find(t => t.id === id)).filter(Boolean);
+    return `
+      <div class="playlist-card">
+        <div style="padding:16px;border-bottom:0.5px solid var(--tg-border);">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+            <span style="font-size:28px;">${pl.emoji}</span>
+            <div>
+              <p style="font-weight:700;font-size:16px;">${pl.name}</p>
+              <p style="color:var(--tg-muted);font-size:12px;margin-top:2px;">${pl.description}</p>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <span class="tag-pill" style="background:rgba(42,171,238,0.12);color:var(--tg-blue);">🎭 ${pl.mood}</span>
+            <span class="tag-pill" style="background:rgba(255,255,255,0.06);color:var(--tg-muted);">${tracks.length} tracks</span>
+          </div>
+        </div>
+        <div>
+          ${tracks.slice(0, 5).map((t, j) => `
+            <div onclick="playTrack(${t.id})" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;border-bottom:${j < Math.min(tracks.length, 5) - 1 ? '0.5px solid rgba(255,255,255,0.04)' : 'none'};"
+              onmouseover="this.style.background='rgba(42,171,238,0.06)'" onmouseout="this.style.background='transparent'">
+              <div style="width:30px;height:30px;border-radius:8px;background:${t.color};display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">${t.emoji}</div>
+              <div style="flex:1;min-width:0;">
+                <p style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.title}</p>
+                <p style="font-size:11px;color:var(--tg-muted);">${t.artist}</p>
+              </div>
+              <span style="font-size:11px;color:var(--tg-muted);">${formatTime(t.duration)}</span>
+            </div>
+          `).join('')}
+          ${tracks.length > 5 ? `<p style="padding:8px 14px;font-size:12px;color:var(--tg-muted);">+${tracks.length - 5} more</p>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById(`page-${name}`).classList.add('active');
+  document.getElementById(`nav-${name}`).classList.add('active');
+  if (name === 'foryou') updateHistoryBox();
+}
+
+// ============================================================
+// INIT
+// ============================================================
+loadSongs();
+setInterval(loadSongs, 30000); // auto-refresh every 30 seconds
+</script>
+</body>
+</html>
