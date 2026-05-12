@@ -397,7 +397,9 @@ function playTrack(id) {
   isPlaying = true;
   progress = 0;
 
-  audio.src = track.src;
+  audio.src = '';
+audio.load();
+audio.src = track.src;
   audio.volume = volume / 100;
   audio.play().catch(e => console.log('Playback error:', e));
 
